@@ -1,0 +1,94 @@
+name: Provision
+
+on:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    provision:
+        name: Install Docker and pull base images
+        runs-on: ubuntu-latest
+        steps:
+            - name: Connect to Tailscale
+              uses: tailscale/github-action@v3
+              with:
+                  authkey: ${{ secrets.TS_AUTHKEY }}
+
+            - name: Ping target host
+              run: |
+                  echo "Checking ${SSH_HOST} is reachable over the tailnet..."
+                  OUT="$(tailscale ping --c 4 --timeout 5s "${SSH_HOST}" || true)"
+                  echo "$OUT"
+                  if ! echo "$OUT" | grep -q 'pong from'; then
+                      echo "::error::${SSH_HOST} did not answer pings - aborting."
+                      exit 1
+                  fi
+                  echo "Host reachable."
+              env:
+                  SSH_HOST: ${{ secrets.SSH_HOST }}
+
+            - name: Provision environment over SSH
+              uses: appleboy/ssh-action@v1.0.3
+              env:
+                  GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+                  GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+              with:
+                  host: ${{ secrets.SSH_HOST }}
+                  username: ${{ secrets.SSH_USERNAME }}
+                  key: ${{ secrets.SSH_PRIVATE_KEY }}
+                  port: 22
+                  envs: GHCR_USERNAME,GHCR_TOKEN
+                  script: |
+                      set -euo pipefail
+
+                      # Use sudo only when not running as root.
+                      SUDO=""
+                      if [ "$(id -u)" != "0" ]; then
+                          SUDO="sudo"
+                      fi
+
+                      echo "=== 1/6 System packages ==="
+                      $SUDO apt-get update -y
+                      $SUDO apt-get install -y ca-certificates curl gnupg
+
+                      echo "=== 2/6 Docker installation ==="
+                      if command -v docker > /dev/null 2>&1; then
+                          echo "Docker already installed: $(docker --version)"
+                      else
+                          echo "Installing Docker Engine (official script)..."
+                          curl -fsSL https://get.docker.com | $SUDO sh
+                      fi
+
+                      echo "=== 3/6 Docker service ==="
+                      $SUDO systemctl enable --now docker
+                      $SUDO docker --version
+                      $SUDO docker compose version
+
+                      echo "=== 4/6 Docker group for current user ==="
+                      if getent group docker > /dev/null; then
+                          $SUDO usermod -aG docker "${USER}"
+                          echo "'${USER}' is a member of the docker group (re-login required to take effect)."
+                      else
+                          $SUDO groupadd docker
+                          $SUDO usermod -aG docker "${USER}"
+                          echo "Created docker group and added '${USER}' (re-login required)."
+                      fi
+
+                      echo "=== 5/6 GHCR login (optional, for private images) ==="
+                      if [ -n "${GHCR_USERNAME:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
+                          echo "${GHCR_TOKEN}" | $SUDO docker login ghcr.io \
+                              --username "${GHCR_USERNAME}" --password-stdin
+                          echo "Logged in to ghcr.io as ${GHCR_USERNAME}."
+                      else
+                          echo "GHCR_USERNAME/GHCR_TOKEN secrets not set - skipping ghcr.io login."
+                          echo "Private image pulls from the API deploy will fail until this is configured."
+                      fi
+
+                      echo "=== 6/6 Base images ==="
+                      $SUDO docker pull mongo:7
+                      echo "mongo:7 pulled (not running yet; reserved for local DB use)."
+
+                      echo ""
+                      echo "Provision completado en $(hostname) a las $(date)"
