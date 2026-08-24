@@ -18,7 +18,7 @@ Repositorios hermanos:
 │   │   └── ansible-setup/      # venv con ansible-core, collections, deploy_key
 │   └── workflows/              # disparadores delgados
 │       ├── ping.yml            # solo verificación de conectividad
-│       ├── provision.yml       # Docker + grupo docker + login GHCR + mongo:7
+│       ├── provision.yml       # Docker + grupo docker + login GHCR + mongo:8
 │       └── sonarqube.yml       # SonarQube + PostgreSQL
 ├── ansible.cfg
 ├── inventory/hosts.yml         # host "target" (SSH_HOST / SSH_USERNAME)
@@ -39,8 +39,8 @@ Repositorios hermanos:
 | Workflow | Qué hace |
 |---|---|
 | **Ping** | Gate de conectividad contra `SSH_HOST` por la tailnet |
-| **Provision** | Instala Docker Engine + compose plugin (idempotente), añade el usuario SSH al grupo `docker`, login en ghcr.io (si hay secrets) y descarga `mongo:7` sin arrancarla |
-| **SonarQube** | Red Docker compartida + PostgreSQL 15 (solo interno) + SonarQube community con volúmenes persistentes; espera a `/api/system/status = UP` |
+| **Provision** | Instala Docker Engine + compose plugin (idempotente), añade el usuario SSH al grupo `docker`, login en ghcr.io (si hay secrets) y descarga `mongo:8` sin arrancarla |
+| **SonarQube** | Red Docker compartida + PostgreSQL 18 (solo interno) + SonarQube community con volúmenes persistentes; espera a `/api/system/status = UP` |
 
 Ambos workflows de despliegue pasan primero por el gate de ping: si el host
 no responde no se toca nada.
@@ -58,7 +58,7 @@ no responde no se toca nada.
 
 ## Variables opcionales (env, ver `group_vars/all.yml`)
 
-`MONGO_IMAGE` (mongo:7) · `DOCKER_NETWORK_NAME` (commons-net) ·
+`MONGO_IMAGE` (mongo:8) · `DOCKER_NETWORK_NAME` (commons-net) ·
 `SONARQUBE_PORT` (9000) · `SONARQUBE_IMAGE` · `POSTGRES_*` · rutas de
 volúmenes bajo `/opt`.
 

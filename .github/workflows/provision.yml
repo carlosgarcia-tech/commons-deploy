@@ -11,7 +11,7 @@ jobs:
         name: Install Docker, GHCR login and base images
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
 
             - name: Reachability gate
               uses: ./.github/actions/tailscale-gate

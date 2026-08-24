@@ -11,13 +11,13 @@ ghcr_username: "{{ lookup('env', 'GHCR_USERNAME') }}"
 ghcr_token: "{{ lookup('env', 'GHCR_TOKEN') }}"
 
 # Base images
-mongo_image: "{{ lookup('env', 'MONGO_IMAGE') | default('mongo:7', true) }}"
+mongo_image: "{{ lookup('env', 'MONGO_IMAGE') | default('mongo:8', true) }}"
 
 # Shared Docker network for all stacks (sonar, future mongo, app)
 docker_network_name: "{{ lookup('env', 'DOCKER_NETWORK_NAME') | default('commons-net', true) }}"
 
 # PostgreSQL backing SonarQube
-postgres_image: "{{ lookup('env', 'POSTGRES_IMAGE') | default('postgres:15', true) }}"
+postgres_image: "{{ lookup('env', 'POSTGRES_IMAGE') | default('postgres:18', true) }}"
 postgres_container_name: sonar-postgres
 postgres_host_data_dir: "{{ lookup('env', 'POSTGRES_HOST_DATA_DIR') | default('/opt/sonar-postgres/data', true) }}"
 postgres_user: "{{ lookup('env', 'POSTGRES_USER') | default('sonar', true) }}"
@@ -30,7 +30,7 @@ postgres_env:
 
 # SonarQube
 sonarqube_image: >-
-    {{ lookup('env', 'SONARQUBE_IMAGE') | default('sonarqube:25.11.0.114957-community', true) }}
+    {{ lookup('env', 'SONARQUBE_IMAGE') | default('sonarqube:2026-lta-community', true) }}
 sonarqube_container_name: sonar
 sonarqube_host_data_dir: "{{ lookup('env', 'SONARQUBE_HOST_DATA_DIR') | default('/opt/sonarqube/data', true) }}"
 sonarqube_host_extensions_dir: "{{ lookup('env', 'SONARQUBE_HOST_EXTENSIONS_DIR') | default('/opt/sonarqube/extensions', true) }}"
