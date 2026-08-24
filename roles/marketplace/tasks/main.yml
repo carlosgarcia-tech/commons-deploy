@@ -89,13 +89,25 @@
     # no published_ports: ingress goes exclusively through the proxy
 
 - name: Health-gate {{ mp_target_name }} inside its container
-  community.docker.docker_container_exec:
-    container: "{{ mp_target_name }}"
-    command: wget --spider -qT 5 http://localhost:3000/health
+  # docker exec via CLI (same proven pattern as the postgres wait), with
+  # the polling loop INSIDE the container: one SSH session instead of
+  # dozens, and the real wget output is captured on failure.
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ mp_target_name }}"
+      - sh
+      - -c
+      - >-
+        for i in $(seq 1 24); do
+          wget --spider -qT 5 http://localhost:3000/health && exit 0;
+          sleep 5;
+        done;
+        echo "health gate exhausted"; exit 1
   register: mp_gate
-  retries: 30
-  delay: 5
-  until: mp_gate.rc == 0
+  changed_when: false
+  failed_when: mp_gate.rc != 0
 
 # --- switch -------------------------------------------------------------
 
@@ -127,10 +139,16 @@
       - "{{ marketplace_proxy_conf_dir }}:/etc/nginx/conf.d:ro"
 
 - name: Reload proxy routing without dropping connections
-  community.docker.docker_container_exec:
-    container: "{{ marketplace_proxy_name }}"
-    command: nginx -s reload
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ marketplace_proxy_name }}"
+      - nginx
+      - -s
+      - reload
   when: mp_route_switched is changed
+  changed_when: true
 
 - name: Verify public endpoint through the proxy
   block:
@@ -155,10 +173,16 @@
         mp_route_color: "{{ mp_active }}"
 
     - name: Apply reverted routing
-      community.docker.docker_container_exec:
-        container: "{{ marketplace_proxy_name }}"
-        command: nginx -s reload
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ marketplace_proxy_name }}"
+          - nginx
+          - -s
+          - reload
       failed_when: false
+      changed_when: true
 
     - name: Fail the deployment with rollback notice
       ansible.builtin.fail:
