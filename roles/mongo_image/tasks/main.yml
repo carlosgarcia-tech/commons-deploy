@@ -1,0 +1,6 @@
+---
+- name: Pull {{ mongo_image }} image
+  community.docker.docker_image:
+    name: "{{ mongo_image }}"
+    source: pull
+    force_source: false

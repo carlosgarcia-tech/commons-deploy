@@ -11,27 +11,10 @@ jobs:
         name: Verify tailnet reachability
         runs-on: ubuntu-latest
         steps:
-            - name: Connect to Tailscale
-              uses: tailscale/github-action@v3
+            - uses: actions/checkout@v4
+
+            - name: Reachability gate
+              uses: ./.github/actions/tailscale-gate
               with:
                   authkey: ${{ secrets.TS_AUTHKEY }}
-
-            - name: Verify tailnet connectivity
-              run: tailscale status
-
-            - name: Ping target host
-              run: |
-                  echo "Checking ${SSH_HOST} is reachable over the tailnet..."
-                  # Any pong counts as reachable, including DERP-relayed ones:
-                  # runner-to-home-server paths usually never get a direct P2P
-                  # connection and tailscale ping would otherwise exit non-zero
-                  # despite full connectivity ('direct connection not established').
-                  OUT="$(tailscale ping --c 4 --timeout 5s "${SSH_HOST}" || true)"
-                  echo "$OUT"
-                  if ! echo "$OUT" | grep -q 'pong from'; then
-                      echo "::error::${SSH_HOST} did not answer pings."
-                      exit 1
-                  fi
-                  echo "Host reachable."
-              env:
-                  SSH_HOST: ${{ secrets.SSH_HOST }}
+                  ssh-host: ${{ secrets.SSH_HOST }}

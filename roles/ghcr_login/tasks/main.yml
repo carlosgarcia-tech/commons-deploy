@@ -1,0 +1,13 @@
+---
+# Login is performed as the SSH user (no become): credentials must land in
+# that user's ~/.docker/config.json so later pulls work without sudo.
+- name: Log in to ghcr.io
+  community.docker.docker_login:
+    registry_url: https://ghcr.io
+    username: "{{ ghcr_username }}"
+    password: "{{ ghcr_token }}"
+  become: false
+  no_log: true
+  when:
+    - ghcr_username | default('') | length > 0
+    - ghcr_token | default('') | length > 0

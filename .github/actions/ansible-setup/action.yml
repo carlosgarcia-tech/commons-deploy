@@ -1,0 +1,27 @@
+name: 'Ansible setup'
+description: >-
+  Installs ansible-core + collections in an isolated venv and writes the
+  SSH private key used by inventory/hosts.yml (deploy_key).
+inputs:
+    ssh-private-key:
+        description: 'Private key for SSH access to the target host'
+        required: true
+runs:
+    using: composite
+    steps:
+        - name: Install ansible-core in isolated venv
+          shell: bash
+          run: |
+              python3 -m venv "${GITHUB_WORKSPACE}/.venv"
+              "${GITHUB_WORKSPACE}/.venv/bin/pip" install --quiet --upgrade pip ansible-core
+              echo "${GITHUB_WORKSPACE}/.venv/bin" >> "${GITHUB_PATH}"
+
+        - name: Install collections
+          shell: bash
+          run: ansible-galaxy collection install -r collections/requirements.yml
+
+        - name: Write SSH private key
+          shell: bash
+          run: |
+              printf '%s\n' '${{ inputs.ssh-private-key }}' > deploy_key
+              chmod 600 deploy_key

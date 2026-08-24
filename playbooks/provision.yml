@@ -1,0 +1,9 @@
+---
+- name: Provision server environment
+  hosts: target
+  become: true
+  roles:
+    - role: docker
+    - role: ghcr_login
+      become: false   # credentials must land in the SSH user's home
+    - role: mongo_image

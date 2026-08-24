@@ -1,0 +1,43 @@
+---
+# Connection
+ansible_connection: ssh
+
+# Docker provision
+# User to add to the 'docker' group; defaults to the SSH user.
+docker_install_user: "{{ lookup('env', 'SSH_USERNAME') }}"
+
+# ghcr.io login (optional; empty values skip the login tasks)
+ghcr_username: "{{ lookup('env', 'GHCR_USERNAME') }}"
+ghcr_token: "{{ lookup('env', 'GHCR_TOKEN') }}"
+
+# Base images
+mongo_image: "{{ lookup('env', 'MONGO_IMAGE') | default('mongo:7', true) }}"
+
+# Shared Docker network for all stacks (sonar, future mongo, app)
+docker_network_name: "{{ lookup('env', 'DOCKER_NETWORK_NAME') | default('commons-net', true) }}"
+
+# PostgreSQL backing SonarQube
+postgres_image: "{{ lookup('env', 'POSTGRES_IMAGE') | default('postgres:15', true) }}"
+postgres_container_name: sonar-postgres
+postgres_host_data_dir: "{{ lookup('env', 'POSTGRES_HOST_DATA_DIR') | default('/opt/sonar-postgres/data', true) }}"
+postgres_user: "{{ lookup('env', 'POSTGRES_USER') | default('sonar', true) }}"
+postgres_password: "{{ lookup('env', 'POSTGRES_PASSWORD') }}"
+postgres_db: "{{ lookup('env', 'POSTGRES_DB') | default('sonar', true) }}"
+postgres_env:
+    POSTGRES_USER: "{{ postgres_user }}"
+    POSTGRES_PASSWORD: "{{ postgres_password }}"
+    POSTGRES_DB: "{{ postgres_db }}"
+
+# SonarQube
+sonarqube_image: >-
+    {{ lookup('env', 'SONARQUBE_IMAGE') | default('sonarqube:25.11.0.114957-community', true) }}
+sonarqube_container_name: sonar
+sonarqube_host_data_dir: "{{ lookup('env', 'SONARQUBE_HOST_DATA_DIR') | default('/opt/sonarqube/data', true) }}"
+sonarqube_host_extensions_dir: "{{ lookup('env', 'SONARQUBE_HOST_EXTENSIONS_DIR') | default('/opt/sonarqube/extensions', true) }}"
+sonarqube_host_logs_dir: "{{ lookup('env', 'SONARQUBE_HOST_LOGS_DIR') | default('/opt/sonarqube/logs', true) }}"
+sonarqube_port: "{{ lookup('env', 'SONARQUBE_PORT') | default('9000', true) }}"
+sonarqube_startup_timeout: "{{ lookup('env', 'SONARQUBE_STARTUP_TIMEOUT') | default(300, true) | int }}"
+sonar_env:
+    SONAR_JDBC_URL: "jdbc:postgresql://{{ postgres_container_name }}:5432/{{ postgres_db }}"
+    SONAR_JDBC_USERNAME: "{{ postgres_user }}"
+    SONAR_JDBC_PASSWORD: "{{ postgres_password }}"

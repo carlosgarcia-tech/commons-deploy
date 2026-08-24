@@ -1,0 +1,73 @@
+---
+- name: Install base system packages
+  ansible.builtin.apt:
+    pkg:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - software-properties-common
+    state: present
+    update_cache: true
+
+- name: Ensure Docker keyring directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Set Docker repository codename
+  ansible.builtin.set_fact:
+    docker_repo_codename: >-
+      {{
+        (ansible_distribution_release | lower)
+        if (ansible_distribution_release is defined and
+            (ansible_distribution_release | lower) not in ['n/a', ''])
+        else (ansible_lsb.codename | default(ansible_distribution_release) | lower)
+      }}
+
+- name: Add Docker apt repository (deb822 format)
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: deb
+    uris: https://download.docker.com/linux/ubuntu
+    suites: "{{ docker_repo_codename }}"
+    components: stable
+    arches: "{{ [ansible_architecture | replace('x86_64', 'amd64')] }}"
+    signed_by: /etc/apt/keyrings/docker.asc
+    state: present
+
+- name: Install Docker Engine
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: Ensure Docker service is running and enabled
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Ensure docker group exists
+  ansible.builtin.group:
+    name: docker
+    state: present
+
+- name: Add user to docker group
+  ansible.builtin.user:
+    name: "{{ docker_install_user }}"
+    groups: docker
+    append: true
+  when: docker_install_user | default('') | length > 0 and docker_install_user != 'root'

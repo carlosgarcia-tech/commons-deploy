@@ -1,0 +1,37 @@
+name: 'Tailscale reachability gate'
+description: >-
+  Joins the runner to the tailnet and verifies the target host answers
+  pings. Any pong counts as reachable (DERP-relayed included): direct P2P
+  is not expected between GitHub runners and NAT'd servers.
+inputs:
+    authkey:
+        description: 'Tailscale auth key'
+        required: true
+    ssh-host:
+        description: 'Target host IP or MagicDNS name inside the tailnet'
+        required: true
+runs:
+    using: composite
+    steps:
+        - name: Connect to Tailscale
+          uses: tailscale/github-action@v3
+          with:
+              authkey: ${{ inputs.authkey }}
+
+        - name: Verify tailnet connectivity
+          shell: bash
+          run: tailscale status
+
+        - name: Ping target host
+          shell: bash
+          run: |
+              echo "Checking ${SSH_HOST} is reachable over the tailnet..."
+              OUT="$(tailscale ping --c 4 --timeout 5s "${SSH_HOST}" || true)"
+              echo "$OUT"
+              if ! echo "$OUT" | grep -q 'pong from'; then
+                  echo "::error::${SSH_HOST} did not answer pings - aborting."
+                  exit 1
+              fi
+              echo "Host reachable."
+          env:
+              SSH_HOST: ${{ inputs.ssh-host }}
