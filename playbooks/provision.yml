@@ -22,3 +22,8 @@
     - name: Gather facts
       ansible.builtin.setup:
   roles:
+    - role: docker
+    - role: ghcr_login
+      become: false   # credentials must land in the SSH user's home
+    - role: mongo_image
+

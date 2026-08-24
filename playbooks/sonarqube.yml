@@ -22,3 +22,4 @@
     - name: Gather facts
       ansible.builtin.setup:
   roles:
+    - role: sonarqube
