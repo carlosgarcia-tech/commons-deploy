@@ -27,6 +27,7 @@ jobs:
             - name: Run provision playbook
               run: ansible-playbook playbooks/provision.yml
               env:
+                  SSH_HOST: ${{ secrets.SSH_HOST }}
                   SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
                   GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
                   GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}

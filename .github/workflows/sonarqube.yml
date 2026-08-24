@@ -27,4 +27,5 @@ jobs:
             - name: Run sonarqube playbook
               run: ansible-playbook playbooks/sonarqube.yml
               env:
+                  SSH_HOST: ${{ secrets.SSH_HOST }}
                   POSTGRES_PASSWORD: ${{ secrets.SONAR_DB_PASSWORD }}

@@ -2,20 +2,23 @@
 - name: Provision server environment
   hosts: target
   become: true
+  # Facts are gathered manually after validating the connection target:
+  # pre_tasks would otherwise run after fact gathering, which is the very
+  # first SSH operation and the one that fails on a malformed host.
+  gather_facts: false
   pre_tasks:
-    - name: Validate SSH_HOST shape before attempting connection
+    - name: Validate SSH_HOST before any connection attempt
       ansible.builtin.assert:
         that:
-          - ansible_host | length > 0
+          - ansible_host | trim | length > 0
           - ansible_host is match('^[A-Za-z0-9.-]+$')
-          - ansible_host | trim == ansible_host
         fail_msg: >-
-          SSH_HOST looks malformed: '{{ ansible_host }}'.
+          SSH_HOST resolves to '{{ ansible_host }}'.
           It must be the bare tailnet IP (100.x.y.z) or MagicDNS name:
           letters/digits/dots/hyphens only - no quotes, no ':port',
           no surrounding spaces or newlines.
+        quiet: false
+
+    - name: Gather facts
+      ansible.builtin.setup:
   roles:
-    - role: docker
-    - role: ghcr_login
-      become: false   # credentials must land in the SSH user's home
-    - role: mongo_image
