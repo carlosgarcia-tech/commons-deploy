@@ -2,26 +2,30 @@
 - name: Report target operating system
   ansible.builtin.debug:
     msg: >-
-      {{ ansible_distribution | default('?') }}
-      {{ ansible_distribution_version | default('?') }}
-      (family={{ ansible_os_family | default('?') }},
-      arch={{ ansible_architecture | default('?') }})
+      {{ ansible_facts['distribution'] | default('?') }}
+      {{ ansible_facts['distribution_version'] | default('?') }}
+      (family={{ ansible_facts['os_family'] | default('?') }},
+      arch={{ ansible_facts['architecture'] | default('?') }})
 
+# NOTE: Fedora reports os_family = 'RedHat'; dispatch by exact distribution.
 - name: Install Docker packages (Debian family)
   ansible.builtin.include_tasks: Debian.yml
-  when: ansible_os_family == 'Debian'
+  when: ansible_facts['os_family'] == 'Debian'
 
 - name: Install Docker packages (Fedora)
   ansible.builtin.include_tasks: Fedora.yml
-  when: ansible_os_family == 'Fedora'
+  when: ansible_facts['distribution'] == 'Fedora'
 
 - name: Fail on unsupported distributions
   ansible.builtin.fail:
     msg: >-
-      Unsupported distribution family '{{ ansible_os_family }}'.
-      The docker role supports Debian/Ubuntu and Fedora; extend it if you
-      need another family.
-  when: ansible_os_family not in ['Debian', 'Fedora']
+      Unsupported distribution '{{ ansible_facts['distribution'] }}'
+      (family={{ ansible_facts['os_family'] }}). The docker role supports
+      Debian/Ubuntu and Fedora; extend it if you need another one.
+  when: >-
+    ansible_facts['os_family'] not in ['Debian', 'RedHat'] or
+    (ansible_facts['os_family'] == 'RedHat' and
+     ansible_facts['distribution'] != 'Fedora')
 
 - name: Ensure Docker service is running and enabled
   ansible.builtin.service:

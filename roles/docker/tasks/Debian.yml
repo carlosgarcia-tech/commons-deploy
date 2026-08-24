@@ -38,9 +38,9 @@
     docker_repo_codename: >-
       {{
         (ansible_distribution_release | lower)
-        if (ansible_distribution_release is defined and
-            (ansible_distribution_release | lower) not in ['n/a', ''])
-        else (ansible_lsb.codename | default(ansible_distribution_release) | lower)
+        if ('distribution_release' in ansible_facts and
+            (ansible_facts['distribution_release'] | lower) not in ['n/a', ''])
+        else (ansible_facts.get('lsb', {}).get('codename') | default(ansible_facts['distribution_release']) | lower)
       }}
 
 - name: Add Docker apt repository (deb822 format)
@@ -50,7 +50,7 @@
     uris: https://download.docker.com/linux/ubuntu
     suites: "{{ docker_repo_codename }}"
     components: stable
-    arches: "{{ [ansible_architecture | replace('x86_64', 'amd64')] }}"
+    arches: "{{ [ansible_facts['architecture'] | replace('x86_64', 'amd64')] }}"
     signed_by: /etc/apt/keyrings/docker.asc
     state: present
 
