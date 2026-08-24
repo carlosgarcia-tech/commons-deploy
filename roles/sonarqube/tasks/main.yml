@@ -32,7 +32,9 @@
       - name: "{{ docker_network_name }}"
     env: "{{ postgres_env }}"
     volumes:
-      - "{{ postgres_host_data_dir }}:/var/lib/postgresql/data"
+      # postgres:18+ stores data under /var/lib/postgresql/<MAJOR>/docker;
+      # the mount point must be the parent dir, not the legacy .../data.
+      - "{{ postgres_host_data_dir }}:/var/lib/postgresql"
     comparisons:
       image: ignore   # avoid recreate on floating-tag digest change
 

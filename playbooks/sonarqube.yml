@@ -19,6 +19,16 @@
           no surrounding spaces or newlines.
         quiet: false
 
+    - name: Validate POSTGRES_PASSWORD before deploying
+      ansible.builtin.assert:
+        that:
+          - postgres_password | length > 0
+        fail_msg: >-
+          POSTGRES_PASSWORD is empty. The postgres entrypoint refuses to
+          initialize a fresh cluster without a superuser password and would
+          crash-loop. Check the SONAR_DB_PASSWORD repository secret.
+        quiet: false
+
     - name: Gather facts
       ansible.builtin.setup:
   roles:
