@@ -1,4 +1,31 @@
 ---
+- name: Report target operating system
+  ansible.builtin.debug:
+    msg: >-
+      {{ ansible_distribution | default('?') }}
+      {{ ansible_distribution_version | default('?') }}
+      (family={{ ansible_os_family | default('?') }},
+      arch={{ ansible_architecture | default('?') }})
+
+- name: Verify Debian-based distribution
+  ansible.builtin.assert:
+    that: ansible_os_family == 'Debian'
+    fail_msg: >-
+      The docker role automates Debian/Ubuntu hosts via apt and this one
+      reports family '{{ ansible_os_family }}'. Extend the role if you need
+      another distribution.
+
+# Minimal server images ship without python3-apt, which the apt module
+# requires; its automatic bootstrap is unreliable, so install it via raw
+# (which does not need any Python on the target).
+- name: Bootstrap python3-apt
+  ansible.builtin.raw: |
+    set -e
+    command -v python3 >/dev/null 2>&1 || { apt-get update -y && apt-get install -y python3; }
+    dpkg -s python3-apt >/dev/null 2>&1 || { apt-get update -y && apt-get install -y python3-apt; }
+  register: apt_bootstrap
+  changed_when: "'Setting up' in apt_bootstrap.stdout"
+
 - name: Install base system packages
   ansible.builtin.apt:
     pkg:
