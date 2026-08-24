@@ -13,7 +13,16 @@
     mode: "0775"
 
 # Explicit pre-pulls with retries: transient resets against Docker Hub
-# would otherwise abort the whole container creation.
+# would otherwise abort the whole container creation. Images loaded
+# manually (docker load) skip the registry entirely, so slow links do
+# not burn CI minutes; bump the tag or remove it server-side to update.
+- name: Check PostgreSQL image presence
+  ansible.builtin.command:
+    cmd: docker image inspect "{{ postgres_image }}"
+  register: pg_image_present
+  changed_when: false
+  failed_when: false
+
 - name: Pull PostgreSQL image
   community.docker.docker_image:
     name: "{{ postgres_image }}"
@@ -22,6 +31,7 @@
   retries: 5
   delay: 15
   until: pg_pull is succeeded
+  when: pg_image_present.rc != 0
 
 - name: Deploy PostgreSQL container
   community.docker.docker_container:
@@ -60,6 +70,13 @@
     - "{{ sonarqube_host_extensions_dir }}"
     - "{{ sonarqube_host_logs_dir }}"
 
+- name: Check SonarQube image presence
+  ansible.builtin.command:
+    cmd: docker image inspect "{{ sonarqube_image }}"
+  register: sq_image_present
+  changed_when: false
+  failed_when: false
+
 - name: Pull SonarQube image
   community.docker.docker_image:
     name: "{{ sonarqube_image }}"
@@ -68,6 +85,7 @@
   retries: 5
   delay: 15
   until: sq_pull is succeeded
+  when: sq_image_present.rc != 0
 
 - name: Deploy SonarQube container
   community.docker.docker_container:
