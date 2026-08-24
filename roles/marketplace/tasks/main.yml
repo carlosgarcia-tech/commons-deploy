@@ -101,7 +101,7 @@
       - -c
       - >-
         for i in $(seq 1 24); do
-          wget --spider -qT 5 http://localhost:3000/health && exit 0;
+          wget --spider -qT 5 http://127.0.0.1:3000/health && exit 0;
           sleep 5;
         done;
         echo "health gate exhausted"; exit 1
