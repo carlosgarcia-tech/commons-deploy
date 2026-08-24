@@ -37,7 +37,7 @@
   ansible.builtin.set_fact:
     docker_repo_codename: >-
       {{
-        (ansible_distribution_release | lower)
+        (ansible_facts['distribution_release'] | lower)
         if ('distribution_release' in ansible_facts and
             (ansible_facts['distribution_release'] | lower) not in ['n/a', ''])
         else (ansible_facts.get('lsb', {}).get('codename') | default(ansible_facts['distribution_release']) | lower)
