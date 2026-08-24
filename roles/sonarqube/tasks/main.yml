@@ -12,6 +12,17 @@
     group: root
     mode: "0775"
 
+# Explicit pre-pulls with retries: transient resets against Docker Hub
+# would otherwise abort the whole container creation.
+- name: Pull PostgreSQL image
+  community.docker.docker_image:
+    name: "{{ postgres_image }}"
+    source: pull
+  register: pg_pull
+  retries: 5
+  delay: 15
+  until: pg_pull is succeeded
+
 - name: Deploy PostgreSQL container
   community.docker.docker_container:
     name: "{{ postgres_container_name }}"
@@ -46,6 +57,15 @@
     - "{{ sonarqube_host_data_dir }}"
     - "{{ sonarqube_host_extensions_dir }}"
     - "{{ sonarqube_host_logs_dir }}"
+
+- name: Pull SonarQube image
+  community.docker.docker_image:
+    name: "{{ sonarqube_image }}"
+    source: pull
+  register: sq_pull
+  retries: 5
+  delay: 15
+  until: sq_pull is succeeded
 
 - name: Deploy SonarQube container
   community.docker.docker_container:

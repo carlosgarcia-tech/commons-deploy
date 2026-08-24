@@ -1,6 +1,10 @@
 ---
+# Retries absorb transient Docker Hub resets on home connections.
 - name: Pull {{ mongo_image }} image
   community.docker.docker_image:
     name: "{{ mongo_image }}"
     source: pull
-    force_source: false
+  register: mongo_pull
+  retries: 5
+  delay: 15
+  until: mongo_pull is succeeded
