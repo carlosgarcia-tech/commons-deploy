@@ -29,8 +29,10 @@ postgres_env:
     POSTGRES_DB: "{{ postgres_db }}"
 
 # SonarQube
+# NOTE: the '-lta-' tags only exist for commercial editions; Community
+# Build publishes 'community' (rolling latest) and '<version>-community'.
 sonarqube_image: >-
-    {{ lookup('env', 'SONARQUBE_IMAGE') | default('sonarqube:2026-lta-community', true) }}
+    {{ lookup('env', 'SONARQUBE_IMAGE') | default('sonarqube:community', true) }}
 sonarqube_container_name: sonar
 sonarqube_host_data_dir: "{{ lookup('env', 'SONARQUBE_HOST_DATA_DIR') | default('/opt/sonarqube/data', true) }}"
 sonarqube_host_extensions_dir: "{{ lookup('env', 'SONARQUBE_HOST_EXTENSIONS_DIR') | default('/opt/sonarqube/extensions', true) }}"
