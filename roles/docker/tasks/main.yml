@@ -7,79 +7,21 @@
       (family={{ ansible_os_family | default('?') }},
       arch={{ ansible_architecture | default('?') }})
 
-- name: Verify Debian-based distribution
-  ansible.builtin.assert:
-    that: ansible_os_family == 'Debian'
-    fail_msg: >-
-      The docker role automates Debian/Ubuntu hosts via apt and this one
-      reports family '{{ ansible_os_family }}'. Extend the role if you need
-      another distribution.
+- name: Install Docker packages (Debian family)
+  ansible.builtin.include_tasks: Debian.yml
+  when: ansible_os_family == 'Debian'
 
-# Minimal server images ship without python3-apt, which the apt module
-# requires; its automatic bootstrap is unreliable, so install it via raw
-# (which does not need any Python on the target).
-- name: Bootstrap python3-apt
-  ansible.builtin.raw: |
-    set -e
-    command -v python3 >/dev/null 2>&1 || { apt-get update -y && apt-get install -y python3; }
-    dpkg -s python3-apt >/dev/null 2>&1 || { apt-get update -y && apt-get install -y python3-apt; }
-  register: apt_bootstrap
-  changed_when: "'Setting up' in apt_bootstrap.stdout"
+- name: Install Docker packages (Fedora)
+  ansible.builtin.include_tasks: Fedora.yml
+  when: ansible_os_family == 'Fedora'
 
-- name: Install base system packages
-  ansible.builtin.apt:
-    pkg:
-      - apt-transport-https
-      - ca-certificates
-      - curl
-      - gnupg
-      - software-properties-common
-    state: present
-    update_cache: true
-
-- name: Ensure Docker keyring directory exists
-  ansible.builtin.file:
-    path: /etc/apt/keyrings
-    state: directory
-    mode: "0755"
-
-- name: Download Docker GPG key
-  ansible.builtin.get_url:
-    url: https://download.docker.com/linux/ubuntu/gpg
-    dest: /etc/apt/keyrings/docker.asc
-    mode: "0644"
-
-- name: Set Docker repository codename
-  ansible.builtin.set_fact:
-    docker_repo_codename: >-
-      {{
-        (ansible_distribution_release | lower)
-        if (ansible_distribution_release is defined and
-            (ansible_distribution_release | lower) not in ['n/a', ''])
-        else (ansible_lsb.codename | default(ansible_distribution_release) | lower)
-      }}
-
-- name: Add Docker apt repository (deb822 format)
-  ansible.builtin.deb822_repository:
-    name: docker
-    types: deb
-    uris: https://download.docker.com/linux/ubuntu
-    suites: "{{ docker_repo_codename }}"
-    components: stable
-    arches: "{{ [ansible_architecture | replace('x86_64', 'amd64')] }}"
-    signed_by: /etc/apt/keyrings/docker.asc
-    state: present
-
-- name: Install Docker Engine
-  ansible.builtin.apt:
-    name:
-      - docker-ce
-      - docker-ce-cli
-      - containerd.io
-      - docker-buildx-plugin
-      - docker-compose-plugin
-    state: present
-    update_cache: true
+- name: Fail on unsupported distributions
+  ansible.builtin.fail:
+    msg: >-
+      Unsupported distribution family '{{ ansible_os_family }}'.
+      The docker role supports Debian/Ubuntu and Fedora; extend it if you
+      need another family.
+  when: ansible_os_family not in ['Debian', 'Fedora']
 
 - name: Ensure Docker service is running and enabled
   ansible.builtin.service:

@@ -1,0 +1,24 @@
+---
+# The official docker-ce.repo is written directly instead of invoking
+# `dnf config-manager`, whose syntax changed between dnf4 and dnf5 across
+# Fedora releases; the repo file itself is identical and idempotent.
+- name: Install Docker repository file
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/fedora/docker-ce.repo
+    dest: /etc/yum.repos.d/docker-ce.repo
+    mode: "0644"
+
+- name: Install Docker Engine
+  ansible.builtin.dnf:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+
+- name: Install Docker SDK for Python (used by container modules)
+  ansible.builtin.dnf:
+    name: python3-docker
+    state: present
