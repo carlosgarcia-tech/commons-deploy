@@ -1,4 +1,10 @@
 ---
+# Blue-green deployment for the API. Two interchangeable containers
+# (commons-marketplace-blue / -green) sit behind an nginx proxy on the
+# shared network. Traffic switches via an nginx reload only after the
+# incoming color passes its health gate; a failed public verification
+# auto-reverts, so a bad release never reaches users.
+
 # The image lives in ghcr.io and may be private. Container tasks run
 # through the root-owned docker socket, so pulls authenticate with
 # /root/.docker/config.json - not the SSH user's credentials written by
@@ -17,7 +23,7 @@
 # Same skip-if-present pattern as the sonarqube role: images loaded
 # manually (docker load) never touch the registry, so slow server links
 # do not burn CI minutes.
-- name: Check {{ marketplace_container_name }} image presence
+- name: Check {{ marketplace_image }} image presence
   ansible.builtin.command:
     cmd: docker image inspect "{{ marketplace_image }}"
   register: mp_image_present
@@ -34,26 +40,136 @@
   until: mp_pull is succeeded
   when: mp_image_present.rc != 0
 
-- name: Deploy {{ marketplace_container_name }} container
+# --- color bookkeeping --------------------------------------------------
+
+- name: Read current proxy routing configuration
+  ansible.builtin.slurp:
+    src: "{{ marketplace_proxy_conf_dir }}/marketplace.conf"
+  register: mp_current_conf
+  failed_when: false
+
+- name: Determine active and target colors
+  ansible.builtin.set_fact:
+    mp_active: >-
+      {{ 'green' if (mp_current_conf.content is defined and mp_current_conf is succeeded
+                     and 'commons-marketplace-green:3000;' in (mp_current_conf.content | b64decode))
+              else 'blue' }}
+    # Legacy pre-blue-green container still holds the published port
+    mp_legacy_container: commons-marketplace
+
+- name: Set target color and route names
+  ansible.builtin.set_fact:
+    mp_target: "{{ 'green' if mp_active == 'blue' else 'blue' }}"
+    mp_target_name: "commons-marketplace-{{ 'green' if mp_active == 'blue' else 'blue' }}"
+    mp_active_name: "commons-marketplace-{{ mp_active }}"
+
+- name: Report deployment plan
+  ansible.builtin.debug:
+    msg: >-
+      Active color '{{ mp_active }}' keeps serving;
+      deploying image {{ marketplace_image }} as '{{ mp_target }}'.
+
+# --- new color ----------------------------------------------------------
+
+- name: Retire legacy single container (pre blue-green naming)
   community.docker.docker_container:
-    name: "{{ marketplace_container_name }}"
+    name: "{{ mp_legacy_container }}"
+    state: absent
+
+- name: Deploy {{ mp_target_name }} container
+  community.docker.docker_container:
+    name: "{{ mp_target_name }}"
     image: "{{ marketplace_image }}"
     restart_policy: unless-stopped
     networks:
       - name: "{{ docker_network_name }}"
-    published_ports:
-      - "{{ marketplace_host_port }}:3000"
     env: "{{ marketplace_env }}"
     comparisons:
       image: ignore   # updates happen via tag bumps, not digest drift
+    # no published_ports: ingress goes exclusively through the proxy
 
-- name: Wait for API health endpoint
-  ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ marketplace_host_port }}/health"
-  register: api_health
+- name: Health-gate {{ mp_target_name }} inside its container
+  community.docker.docker_container_exec:
+    container: "{{ mp_target_name }}"
+    command: wget --spider -qT 5 http://localhost:3000/health
+  register: mp_gate
   retries: 30
   delay: 5
-  until: api_health.status == 200
-  # HTTP against loopback needs no privileges; running this without sudo
-  # avoids fresh-connection become prompts timing out mid retry-loop.
-  become: false
+  until: mp_gate.rc == 0
+
+# --- switch -------------------------------------------------------------
+
+- name: Ensure proxy config directory exists
+  ansible.builtin.file:
+    path: "{{ marketplace_proxy_conf_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Point proxy at {{ mp_target }}
+  ansible.builtin.template:
+    src: marketplace.conf.j2
+    dest: "{{ marketplace_proxy_conf_dir }}/marketplace.conf"
+    mode: "0644"
+  vars:
+    mp_route_color: "{{ mp_target }}"
+  register: mp_route_switched
+
+- name: Run reverse proxy on port {{ marketplace_host_port }}
+  community.docker.docker_container:
+    name: "{{ marketplace_proxy_name }}"
+    image: "{{ marketplace_proxy_image }}"
+    restart_policy: unless-stopped
+    networks:
+      - name: "{{ docker_network_name }}"
+    published_ports:
+      - "{{ marketplace_host_port }}:80"
+    volumes:
+      - "{{ marketplace_proxy_conf_dir }}:/etc/nginx/conf.d:ro"
+
+- name: Reload proxy routing without dropping connections
+  community.docker.docker_container_exec:
+    container: "{{ marketplace_proxy_name }}"
+    command: nginx -s reload
+  when: mp_route_switched is changed
+
+- name: Verify public endpoint through the proxy
+  block:
+    - name: Wait for healthy response on port {{ marketplace_host_port }}
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ marketplace_host_port }}/health"
+      register: api_health
+      retries: 12
+      delay: 5
+      until: api_health.status == 200
+      # HTTP against loopback needs no privileges; running this without
+      # sudo avoids fresh-connection become prompts timing out mid loop.
+      become: false
+
+  rescue:
+    - name: Revert proxy routing to {{ mp_active }}
+      ansible.builtin.template:
+        src: marketplace.conf.j2
+        dest: "{{ marketplace_proxy_conf_dir }}/marketplace.conf"
+        mode: "0644"
+      vars:
+        mp_route_color: "{{ mp_active }}"
+
+    - name: Apply reverted routing
+      community.docker.docker_container_exec:
+        container: "{{ marketplace_proxy_name }}"
+        command: nginx -s reload
+      failed_when: false
+
+    - name: Fail the deployment with rollback notice
+      ansible.builtin.fail:
+        msg: >-
+          {{ mp_target }} did not serve a healthy /health through the
+          proxy; traffic was rolled back to {{ mp_active }}, which stays
+          running for inspection. Check its logs before retrying.
+
+# --- retire -------------------------------------------------------------
+
+- name: Remove previous color container
+  community.docker.docker_container:
+    name: "{{ mp_active_name }}"
+    state: absent

@@ -1,0 +1,27 @@
+# Managed by Ansible (roles/marketplace) - edits are overwritten on the
+# next deploy. Routes to the color container that last passed its gate.
+upstream marketplace_active {
+    server commons-marketplace-{{ mp_route_color }}:3000;
+}
+
+server {
+    listen 80;
+
+    location / {
+        proxy_pass http://marketplace_active;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket upgrade support (chat/realtime endpoints)
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout          300s;
+        proxy_send_timeout          300s;
+
+        # app parses JSON bodies capped at 10mb
+        client_max_body_size 12m;
+    }
+}
