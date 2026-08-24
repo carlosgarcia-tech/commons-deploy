@@ -43,3 +43,23 @@ sonar_env:
     SONAR_JDBC_URL: "jdbc:postgresql://{{ postgres_container_name }}:5432/{{ postgres_db }}"
     SONAR_JDBC_USERNAME: "{{ postgres_user }}"
     SONAR_JDBC_PASSWORD: "{{ postgres_password }}"
+
+# commons-marketplace API (ghcr.io/carlosgarcia-tech/commons-marketplace,
+# published by the app repo's CI with version, sha and latest tags)
+marketplace_image: >-
+    {{ lookup('env', 'MARKETPLACE_IMAGE') | default('ghcr.io/carlosgarcia-tech/commons-marketplace:latest', true) }}
+marketplace_container_name: commons-marketplace
+# Host-side publish port; the container always listens on 3000 (the image
+# HEALTHCHECK probes localhost:3000/health).
+marketplace_host_port: "{{ lookup('env', 'MARKETPLACE_PORT') | default('3000', true) }}"
+marketplace_env:
+    NODE_ENV: production
+    PORT: "3000"
+    DB_URL: "{{ lookup('env', 'DB_URL') }}"
+    SUPABASE_URL: "{{ lookup('env', 'SUPABASE_URL') }}"
+    SUPABASE_PUBLISHABLE_KEY: "{{ lookup('env', 'SUPABASE_PUBLISHABLE_KEY') }}"
+    SUPABASE_SECRET_KEY: "{{ lookup('env', 'SUPABASE_SECRET_KEY') }}"
+    SUPABASE_STORAGE_BUCKET: "{{ lookup('env', 'SUPABASE_STORAGE_BUCKET') }}"
+    ABLY_API_KEY: "{{ lookup('env', 'ABLY_API_KEY') }}"
+    CORS_ORIGINS: "{{ lookup('env', 'CORS_ORIGINS') }}"
+    TRUST_PROXY: "{{ lookup('env', 'TRUST_PROXY') | default('false', true) }}"

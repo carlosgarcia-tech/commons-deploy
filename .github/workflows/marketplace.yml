@@ -1,0 +1,41 @@
+name: Marketplace
+
+on:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    marketplace:
+        name: Deploy commons-marketplace from GHCR
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+
+            - name: Reachability gate
+              uses: ./.github/actions/tailscale-gate
+              with:
+                  authkey: ${{ secrets.TS_AUTHKEY }}
+                  ssh-host: ${{ secrets.SSH_HOST }}
+
+            - name: Ansible setup
+              uses: ./.github/actions/ansible-setup
+              with:
+                  ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+            - name: Run marketplace playbook
+              run: ansible-playbook playbooks/marketplace.yml
+              env:
+                  SSH_HOST: ${{ secrets.SSH_HOST }}
+                  SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+                  GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+                  GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+                  DB_URL: ${{ secrets.DB_URL }}
+                  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+                  SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+                  SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+                  SUPABASE_STORAGE_BUCKET: ${{ secrets.SUPABASE_STORAGE_BUCKET }}
+                  ABLY_API_KEY: ${{ secrets.ABLY_API_KEY }}
+                  CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
+                  TRUST_PROXY: ${{ secrets.TRUST_PROXY }}

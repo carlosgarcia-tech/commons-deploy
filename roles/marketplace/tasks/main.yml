@@ -1,0 +1,56 @@
+---
+# The image lives in ghcr.io and may be private. Container tasks run
+# through the root-owned docker socket, so pulls authenticate with
+# /root/.docker/config.json - not the SSH user's credentials written by
+# the ghcr_login role; hence this second, root-context login.
+- name: Log in to ghcr.io (root context)
+  community.docker.docker_login:
+    registry_url: https://ghcr.io
+    username: "{{ ghcr_username }}"
+    password: "{{ ghcr_token }}"
+  become: true
+  no_log: true
+  when:
+    - ghcr_username | default('') | length > 0
+    - ghcr_token | default('') | length > 0
+
+# Same skip-if-present pattern as the sonarqube role: images loaded
+# manually (docker load) never touch the registry, so slow server links
+# do not burn CI minutes.
+- name: Check {{ marketplace_container_name }} image presence
+  ansible.builtin.command:
+    cmd: docker image inspect "{{ marketplace_image }}"
+  register: mp_image_present
+  changed_when: false
+  failed_when: false
+
+- name: Pull {{ marketplace_image }} image
+  community.docker.docker_image:
+    name: "{{ marketplace_image }}"
+    source: pull
+  register: mp_pull
+  retries: 5
+  delay: 15
+  until: mp_pull is succeeded
+  when: mp_image_present.rc != 0
+
+- name: Deploy {{ marketplace_container_name }} container
+  community.docker.docker_container:
+    name: "{{ marketplace_container_name }}"
+    image: "{{ marketplace_image }}"
+    restart_policy: unless-stopped
+    networks:
+      - name: "{{ docker_network_name }}"
+    published_ports:
+      - "{{ marketplace_host_port }}:3000"
+    env: "{{ marketplace_env }}"
+    comparisons:
+      image: ignore   # updates happen via tag bumps, not digest drift
+
+- name: Wait for API health endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ marketplace_host_port }}/health"
+  register: api_health
+  retries: 30
+  delay: 5
+  until: api_health.status == 200
