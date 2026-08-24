@@ -48,9 +48,8 @@ sonar_env:
 # published by the app repo's CI with version, sha and latest tags)
 marketplace_image: >-
     {{ lookup('env', 'MARKETPLACE_IMAGE') | default('ghcr.io/carlosgarcia-tech/commons-marketplace:latest', true) }}
-marketplace_container_name: commons-marketplace
-# Host-side publish port; the container always listens on 3000 (the image
-# HEALTHCHECK probes localhost:3000/health).
+# Host-side publish port; owned by the reverse proxy, whose upstream
+# always targets container port 3000 (the image HEALTHCHECK probes it).
 marketplace_host_port: "{{ lookup('env', 'MARKETPLACE_PORT') | default('3000', true) }}"
 marketplace_env:
     NODE_ENV: production
@@ -62,4 +61,11 @@ marketplace_env:
     SUPABASE_STORAGE_BUCKET: "{{ lookup('env', 'SUPABASE_STORAGE_BUCKET') }}"
     ABLY_API_KEY: "{{ lookup('env', 'ABLY_API_KEY') }}"
     CORS_ORIGINS: "{{ lookup('env', 'CORS_ORIGINS') }}"
-    TRUST_PROXY: "{{ lookup('env', 'TRUST_PROXY') | default('false', true) }}"
+    # One nginx hop (the blue-green proxy) sits in front of the app
+    TRUST_PROXY: "{{ lookup('env', 'TRUST_PROXY') | default('1', true) }}"
+
+# Blue-green reverse proxy: publishes marketplace_host_port and routes to
+# whichever color container last passed its health gate.
+marketplace_proxy_name: commons-proxy
+marketplace_proxy_image: "{{ lookup('env', 'MARKETPLACE_PROXY_IMAGE') | default('nginx:1.29-alpine', true) }}"
+marketplace_proxy_conf_dir: "{{ lookup('env', 'MARKETPLACE_PROXY_CONF_DIR') | default('/opt/commons-proxy/conf.d', true) }}"

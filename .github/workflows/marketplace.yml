@@ -2,6 +2,14 @@ name: Marketplace
 
 on:
     workflow_dispatch:
+        inputs:
+            image_tag:
+                description: >-
+                    Image tag to deploy (e.g. 20260824-a1b2c3d). Defaults
+                    to latest - note that an already-downloaded 'latest'
+                    is reused as-is; pin the tag for guaranteed freshness.
+                required: false
+                default: 'latest'
 
 permissions:
     contents: read
@@ -29,6 +37,7 @@ jobs:
               env:
                   SSH_HOST: ${{ secrets.SSH_HOST }}
                   SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+                  MARKETPLACE_IMAGE: "ghcr.io/carlosgarcia-tech/commons-marketplace:${{ inputs.image_tag }}"
                   GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
                   GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
                   DB_URL: ${{ secrets.DB_URL }}
