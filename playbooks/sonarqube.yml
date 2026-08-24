@@ -1,0 +1,6 @@
+---
+- name: Deploy SonarQube with PostgreSQL backend
+  hosts: target
+  become: true
+  roles:
+    - role: sonarqube

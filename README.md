@@ -1,41 +1,74 @@
 # commons-deploy
 
-Infraestructura y despliegue del ecosistema Commons Marketplace, ejecutado con
-GitHub Actions sobre Tailscale hacia el servidor propio.
+Infraestructura y despliegue del ecosistema Commons Marketplace.
+**Ansible puro** (playbooks + roles) ejecutado desde GitHub Actions sobre
+Tailscale hacia el servidor propio.
 
 Repositorios hermanos:
 
 - `commons-marketplace/` — API backend (Node.js/Express)
-- `automation-deployments/` — automatización legacy (GitLab + Ansible)
+- `automation-deployments/` — automatización legacy (GitLab, referencia)
+
+## Estructura
+
+```
+├── .github/
+│   ├── actions/
+│   │   ├── tailscale-gate/     # conectar a tailnet + ping al host (acepta DERP)
+│   │   └── ansible-setup/      # venv con ansible-core, collections, deploy_key
+│   └── workflows/              # disparadores delgados
+│       ├── ping.yml            # solo verificación de conectividad
+│       ├── provision.yml       # Docker + grupo docker + login GHCR + mongo:7
+│       └── sonarqube.yml       # SonarQube + PostgreSQL
+├── ansible.cfg
+├── inventory/hosts.yml         # host "target" (SSH_HOST / SSH_USERNAME)
+├── group_vars/all.yml          # toda la configuración (lookups a env)
+├── collections/requirements.yml
+├── playbooks/
+│   ├── provision.yml           # roles: docker → ghcr_login → mongo_image
+│   └── sonarqube.yml           # role: sonarqube (Postgres + Sonar + health gate)
+└── roles/
+    ├── docker/tasks/main.yml   # apt repo deb822 + docker-ce + compose plugin
+    ├── ghcr_login/tasks/main.yml
+    ├── mongo_image/tasks/main.yml
+    └── sonarqube/tasks/main.yml
+```
 
 ## Workflows
 
-| Workflow | Qué hace | Disparo |
+| Workflow | Qué hace |
+|---|---|
+| **Ping** | Gate de conectividad contra `SSH_HOST` por la tailnet |
+| **Provision** | Instala Docker Engine + compose plugin (idempotente), añade el usuario SSH al grupo `docker`, login en ghcr.io (si hay secrets) y descarga `mongo:7` sin arrancarla |
+| **SonarQube** | Red Docker compartida + PostgreSQL 15 (solo interno) + SonarQube community con volúmenes persistentes; espera a `/api/system/status = UP` |
+
+Ambos workflows de despliegue pasan primero por el gate de ping: si el host
+no responde no se toca nada.
+
+## Secrets requeridos
+
+| Secret | Uso | Workflows |
 |---|---|---|
-| `ping.yml` | Verifica que el host sea alcanzable por la tailnet (acepta rutas DERP) | Manual |
-| `provision.yml` | Instala Docker Engine + compose, grupo `docker`, login GHCR opcional y descarga la imagen base de Mongo | Manual |
+| `TS_AUTHKEY` | Auth key de Tailscale para el runner | todos |
+| `SSH_HOST` | IP/MagicDNS del servidor en la tailnet | todos |
+| `SSH_USERNAME` | Usuario SSH (también entra al grupo docker) | provision |
+| `SSH_PRIVATE_KEY` | Llave privada de acceso | provision, sonarqube |
+| `GHCR_USERNAME` / `GHCR_TOKEN` | PAT `read:packages` para ghcr.io (opcional) | provision |
+| `SONAR_DB_PASSWORD` | Password del Postgres de Sonar | sonarqube |
 
-Ambos usan el mismo mecanismo que el deploy del repo API:
-`tailscale/github-action@v3` + `appleboy/ssh-action@v1.0.3`.
+## Variables opcionales (env, ver `group_vars/all.yml`)
 
-## Secrets requeridos (Settings → Secrets → Actions)
-
-| Secret | Uso | Requerido en |
-|---|---|---|
-| `TS_AUTHKEY` | Auth key de Tailscale para el runner | ping, provision |
-| `SSH_HOST` | IP/MagicDNS del servidor en el tailnet | ping, provision |
-| `SSH_USERNAME` | Usuario SSH del servidor | provision |
-| `SSH_PRIVATE_KEY` | Llave privada para SSH | provision |
-| `GHCR_USERNAME` | Usuario de GitHub (para `docker login ghcr.io`) | provision (opcional) |
-| `GHCR_TOKEN` | PAT con scope `read:packages` | provision (opcional) |
-
-Sin `GHCR_USERNAME/GHCR_TOKEN` el provision sigue y solo avisa; pero el deploy
-de imágenes privadas fallará hasta configurarlo.
+`MONGO_IMAGE` (mongo:7) · `DOCKER_NETWORK_NAME` (commons-net) ·
+`SONARQUBE_PORT` (9000) · `SONARQUBE_IMAGE` · `POSTGRES_*` · rutas de
+volúmenes bajo `/opt`.
 
 ## Notas
 
-- El ping acepta conectividad por relay DERP: entre runners de GitHub
-  (datacenter) y servidores domésticos tras NAT normalmente no hay P2P directo.
-- Tras añadir el usuario al grupo `docker` hace falta re-login para usar docker
-  sin `sudo`; el workflow usa sudo automáticamente cuando es necesario.
-- La imagen `mongo:7` se descarga pero no se ejecuta todavía (reservada).
+- El ping acepta conectividad vía relay DERP: entre runners de GitHub y
+  servidores domésticos tras NAT no suele haber P2P directo.
+- Tras el provision hace falta re-login en el servidor para usar docker
+  sin sudo; los playbooks usan `become` automáticamente donde toca.
+- Credenciales iniciales de SonarQube: `admin/admin` (cambiarlas en el
+  primer arranque desde la UI).
+- La imagen Mongo se descarga pero no corre todavía: reservada para uso
+  posterior como BD local.

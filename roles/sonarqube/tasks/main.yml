@@ -1,0 +1,80 @@
+---
+- name: Ensure shared Docker network exists
+  community.docker.docker_network:
+    name: "{{ docker_network_name }}"
+    state: present
+
+- name: Ensure PostgreSQL host directory exists
+  ansible.builtin.file:
+    path: "{{ postgres_host_data_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0775"
+
+- name: Deploy PostgreSQL container
+  community.docker.docker_container:
+    name: "{{ postgres_container_name }}"
+    image: "{{ postgres_image }}"
+    restart_policy: unless-stopped
+    networks:
+      - name: "{{ docker_network_name }}"
+    env: "{{ postgres_env }}"
+    volumes:
+      - "{{ postgres_host_data_dir }}:/var/lib/postgresql/data"
+    comparisons:
+      image: ignore   # avoid recreate on floating-tag digest change
+
+- name: Wait for PostgreSQL to accept connections
+  ansible.builtin.command: >-
+    docker exec {{ postgres_container_name }}
+    pg_isready -U {{ postgres_user }} -d {{ postgres_db }}
+  register: postgres_ready
+  retries: 12
+  delay: 5
+  until: postgres_ready.rc == 0
+  changed_when: false
+
+- name: Ensure SonarQube host directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0775"
+  loop:
+    - "{{ sonarqube_host_data_dir }}"
+    - "{{ sonarqube_host_extensions_dir }}"
+    - "{{ sonarqube_host_logs_dir }}"
+
+- name: Deploy SonarQube container
+  community.docker.docker_container:
+    name: "{{ sonarqube_container_name }}"
+    image: "{{ sonarqube_image }}"
+    restart_policy: unless-stopped
+    networks:
+      - name: "{{ docker_network_name }}"
+    published_ports:
+      - "{{ sonarqube_port }}:9000"
+    env: "{{ sonar_env }}"
+    volumes:
+      - "{{ sonarqube_host_data_dir }}:/opt/sonarqube/data"
+      - "{{ sonarqube_host_extensions_dir }}:/opt/sonarqube/extensions"
+      - "{{ sonarqube_host_logs_dir }}:/opt/sonarqube/logs"
+
+- name: Wait for SonarQube port
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: "{{ sonarqube_port }}"
+    delay: 10
+    timeout: "{{ sonarqube_startup_timeout }}"
+
+- name: Wait for SonarQube status UP
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ sonarqube_port }}/api/system/status"
+    return_content: true
+  register: sonar_status
+  retries: "{{ (sonarqube_startup_timeout / 10) | round | int }}"
+  delay: 10
+  until: "'UP' in sonar_status.content"
+  failed_when: sonar_status is failed

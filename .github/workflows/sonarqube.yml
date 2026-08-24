@@ -1,0 +1,30 @@
+name: SonarQube
+
+on:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    sonarqube:
+        name: Deploy SonarQube with PostgreSQL backend
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Reachability gate
+              uses: ./.github/actions/tailscale-gate
+              with:
+                  authkey: ${{ secrets.TS_AUTHKEY }}
+                  ssh-host: ${{ secrets.SSH_HOST }}
+
+            - name: Ansible setup
+              uses: ./.github/actions/ansible-setup
+              with:
+                  ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+            - name: Run sonarqube playbook
+              run: ansible-playbook playbooks/sonarqube.yml
+              env:
+                  POSTGRES_PASSWORD: ${{ secrets.SONAR_DB_PASSWORD }}
