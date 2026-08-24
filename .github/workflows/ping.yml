@@ -1,10 +1,16 @@
 name: Ping
 
 on:
+    push:
+        branches: [main]
     workflow_dispatch:
 
 permissions:
     contents: read
+
+concurrency:
+    group: ping
+    cancel-in-progress: true
 
 jobs:
     ping:
