@@ -54,3 +54,6 @@
   retries: 30
   delay: 5
   until: api_health.status == 200
+  # HTTP against loopback needs no privileges; running this without sudo
+  # avoids fresh-connection become prompts timing out mid retry-loop.
+  become: false

@@ -23,9 +23,12 @@
       ansible.builtin.assert:
         that:
           - marketplace_env.DB_URL | trim | length > 0
+          - marketplace_env.DB_URL is match('^mongodb(\+srv)?://\S+')
         fail_msg: >-
-          DB_URL is empty. The API cannot start without its database
-          connection string. Check the DB_URL repository secret.
+          DB_URL must be a complete MongoDB connection string starting with
+          'mongodb://' or 'mongodb+srv://' followed by credentials/host.
+          The configured value failed this check - verify the DB_URL
+          repository secret (the value itself is never printed here).
         quiet: false
 
     - name: Gather facts
