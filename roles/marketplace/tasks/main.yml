@@ -89,8 +89,10 @@
     networks:
       - name: "{{ docker_network_name }}"
     env: "{{ marketplace_env }}"
-    comparisons:
-      image: ignore   # updates happen via tag bumps, not digest drift
+    # NOTE: no comparisons.image=ignore here - it would silently keep the
+    # container on its OLD image when only the tag changes, turning every
+    # deploy into a color swap with stale code. Image changes MUST trigger
+    # recreation; use immutable tags (version/date-sha) instead of latest.
     # no published_ports: ingress goes exclusively through the proxy
 
 - name: Health-gate {{ mp_target_name }} inside its container
