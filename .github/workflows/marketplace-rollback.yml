@@ -1,0 +1,41 @@
+name: Marketplace Rollback
+
+on:
+    workflow_dispatch:
+        inputs:
+            color:
+                description: 'Color that should receive traffic (the other one gets parked stopped)'
+                required: true
+                type: choice
+                options:
+                    - blue
+                    - green
+
+permissions:
+    contents: read
+
+jobs:
+    rollback:
+        name: Switch traffic between blue/green
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+
+            - name: Reachability gate
+              uses: ./.github/actions/tailscale-gate
+              with:
+                  authkey: ${{ secrets.TS_AUTHKEY }}
+                  ssh-host: ${{ secrets.SSH_HOST }}
+
+            - name: Ansible setup
+              uses: ./.github/actions/ansible-setup
+              with:
+                  ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+            - name: Run rollback playbook
+              run: >-
+                  ansible-playbook playbooks/marketplace_rollback.yml
+                  -e marketplace_rollback_color=${{ inputs.color }}
+              env:
+                  SSH_HOST: ${{ secrets.SSH_HOST }}
+                  SSH_USERNAME: ${{ secrets.SSH_USERNAME }}

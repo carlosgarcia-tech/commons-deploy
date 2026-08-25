@@ -193,7 +193,11 @@
 
 # --- retire -------------------------------------------------------------
 
-- name: Remove previous color container
+- name: Park previous color container (stopped, kept for instant rollback)
+  # Stopped - not removed: it preserves the exact image/env combination
+  # that served traffic until now, so the Marketplace Rollback workflow
+  # can flip traffic back in seconds without pulling anything. The next
+  # deploy reuses this slot as its target color.
   community.docker.docker_container:
     name: "{{ mp_active_name }}"
-    state: absent
+    state: stopped

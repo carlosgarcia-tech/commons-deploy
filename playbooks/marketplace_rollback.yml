@@ -1,0 +1,31 @@
+---
+- name: Roll back commons-marketplace traffic to the other color
+  hosts: target
+  become: true
+  gather_facts: false
+  pre_tasks:
+    - name: Validate SSH_HOST before any connection attempt
+      ansible.builtin.assert:
+        that:
+          - ansible_host | trim | length > 0
+          - ansible_host is match('^[A-Za-z0-9.-]+$')
+        fail_msg: >-
+          SSH_HOST resolves to '{{ ansible_host }}'.
+          It must be the bare tailnet IP (100.x.y.z) or MagicDNS name:
+          letters/digits/dots/hyphens only - no quotes, no ':port',
+          no surrounding spaces or newlines.
+        quiet: false
+
+    - name: Validate requested rollback color
+      ansible.builtin.assert:
+        that:
+          - marketplace_rollback_color is defined
+          - marketplace_rollback_color in ['blue', 'green']
+        fail_msg: >-
+          marketplace_rollback_color must be 'blue' or 'green' - the color
+          that should receive traffic.
+        quiet: false
+
+  roles:
+    - role: marketplace
+      tasks_from: rollback.yml
