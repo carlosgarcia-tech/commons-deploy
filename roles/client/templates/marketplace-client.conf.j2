@@ -1,0 +1,79 @@
+# Managed by Ansible (roles/client) - edits are overwritten on the next
+# deploy. Single public entrypoint: routes by path between the active
+# client color and the API blue-green stack.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+upstream marketplace_client_backend {
+    server commons-client-{{ cl_route_color }}:3000;
+}
+
+upstream marketplace_api_backend {
+    server {{ client_api_upstream_host }}:{{ client_api_upstream_port }};
+}
+
+server {
+    listen 80;
+
+    # app parses JSON bodies up to 10mb upstream; keep headroom here
+    client_max_body_size 12m;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript
+               application/xml image/svg+xml;
+    gzip_min_length 1024;
+
+    # The client's own liveness endpoint must NOT be shadowed by the API
+    location = /api/health {
+        proxy_pass http://marketplace_client_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    # API v1 (browser calls stay same-origin; no CORS, no exposure)
+    location /api/ {
+        proxy_pass http://marketplace_api_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout                 300s;
+    }
+
+    # socket.io (chat) - long-lived upgraded connections to the API
+    location /socket.io/ {
+        proxy_pass http://marketplace_api_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host       $host;
+        proxy_read_timeout          300s;
+        proxy_send_timeout          300s;
+    }
+
+    # Content-hashed assets: cache aggressively at the edge
+    location /_next/static/ {
+        proxy_pass http://marketplace_client_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location / {
+        proxy_pass http://marketplace_client_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket upgrades (socket.io falls back to polling otherwise)
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout          300s;
+        proxy_send_timeout          300s;
+    }
+}

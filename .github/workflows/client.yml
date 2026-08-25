@@ -1,0 +1,42 @@
+name: Client
+
+on:
+    workflow_dispatch:
+        inputs:
+            image_tag:
+                description: >-
+                    Image tag to deploy (e.g. 20260825-a1b2c3d). Defaults
+                    to latest - note that an already-downloaded 'latest'
+                    is reused as-is; pin the tag for guaranteed freshness.
+                required: false
+                default: 'latest'
+
+permissions:
+    contents: read
+
+jobs:
+    client:
+        name: Deploy commons-marketplace-client from GHCR
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+
+            - name: Reachability gate
+              uses: ./.github/actions/tailscale-gate
+              with:
+                  authkey: ${{ secrets.TS_AUTHKEY }}
+                  ssh-host: ${{ secrets.SSH_HOST }}
+
+            - name: Ansible setup
+              uses: ./.github/actions/ansible-setup
+              with:
+                  ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+            - name: Run client playbook
+              run: ansible-playbook playbooks/client.yml
+              env:
+                  SSH_HOST: ${{ secrets.SSH_HOST }}
+                  SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+                  GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+                  GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+                  CLIENT_IMAGE: "ghcr.io/carlosgarcia-tech/commons-marketplace-client:${{ inputs.image_tag }}"

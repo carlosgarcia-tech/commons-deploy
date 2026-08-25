@@ -1,0 +1,133 @@
+---
+# Instant traffic-level rollback: flips the client proxy to the OTHER
+# color, which previous deploys left stopped with its exact last-known-
+# good image and configuration. No image pull, no recreation.
+
+- name: Read current proxy routing configuration
+  ansible.builtin.slurp:
+    src: "{{ client_proxy_conf_dir }}/marketplace-client.conf"
+  register: rb_current_conf
+
+- name: Determine currently active color
+  ansible.builtin.set_fact:
+    rb_active: >-
+      {{ 'green' if ('commons-client-green:3000;' in (rb_current_conf.content | b64decode))
+              else 'blue' }}
+
+- name: Refuse no-op rollback
+  ansible.builtin.fail:
+    msg: "The proxy already serves '{{ rb_active }}'; there is nothing to roll back."
+  when: rb_active == marketplace_rollback_color
+
+- name: Set rollback container name
+  ansible.builtin.set_fact:
+    rb_target_name: "commons-client-{{ marketplace_rollback_color }}"
+
+- name: Check {{ rb_target_name }} exists
+  community.docker.docker_container_info:
+    name: "{{ rb_target_name }}"
+  register: rb_target_info
+
+- name: Fail when the other color was never deployed
+  ansible.builtin.fail:
+    msg: >-
+      Container {{ rb_target_name }} does not exist on this host, so there
+      is no {{ marketplace_rollback_color }} environment to roll back to.
+      Run a normal Client deploy first; it parks this color stopped and
+      makes it available for future rollbacks.
+  when: not rb_target_info.exists
+
+- name: Start {{ rb_target_name }} with its last-known-good configuration
+  community.docker.docker_container:
+    name: "{{ rb_target_name }}"
+    state: started
+
+- name: Health-gate {{ rb_target_name }}
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ rb_target_name }}"
+      - sh
+      - -c
+      - >-
+        for i in $(seq 1 24); do
+          wget --spider -qT 5 http://127.0.0.1:3000/api/health && exit 0;
+          sleep 5;
+        done;
+        echo "health gate exhausted"; exit 1
+  register: rb_gate
+  changed_when: false
+  failed_when: rb_gate.rc != 0
+
+- name: Switch traffic and verify
+  block:
+    - name: Point proxy at {{ marketplace_rollback_color }}
+      ansible.builtin.template:
+        src: marketplace-client.conf.j2
+        dest: "{{ client_proxy_conf_dir }}/marketplace-client.conf"
+        mode: "0644"
+      vars:
+        cl_route_color: "{{ marketplace_rollback_color }}"
+      register: rb_route_switched
+
+    - name: Reload proxy routing without dropping connections
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ client_proxy_name }}"
+          - nginx
+          - -s
+          - reload
+      when: rb_route_switched is changed
+      changed_when: true
+
+    - name: Verify public endpoint through the proxy
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ client_host_port }}/api/health"
+      register: api_health
+      retries: 12
+      delay: 5
+      until: api_health.status == 200
+      become: false
+
+  rescue:
+    - name: Revert proxy routing to {{ rb_active }}
+      ansible.builtin.template:
+        src: marketplace-client.conf.j2
+        dest: "{{ client_proxy_conf_dir }}/marketplace-client.conf"
+        mode: "0644"
+      vars:
+        cl_route_color: "{{ rb_active }}"
+
+    - name: Apply reverted routing
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ client_proxy_name }}"
+          - nginx
+          - -s
+          - reload
+      failed_when: false
+      changed_when: true
+
+    - name: Fail the rollback with notice
+      ansible.builtin.fail:
+        msg: >-
+          {{ marketplace_rollback_color }} did not serve a healthy
+          /api/health through the proxy; traffic was restored to
+          {{ rb_active }}.
+
+- name: Park demoted color ({{ rb_active }})
+  community.docker.docker_container:
+    name: "commons-client-{{ rb_active }}"
+    state: stopped
+
+- name: Report rollback result
+  ansible.builtin.debug:
+    msg: >-
+      Traffic now served by '{{ marketplace_rollback_color }}';
+      '{{ rb_active }}' is parked stopped and remains available for
+      another instant rollback or as the next deploy target.

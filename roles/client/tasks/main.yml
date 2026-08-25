@@ -1,0 +1,194 @@
+---
+# Blue-green deployment for the client. Two interchangeable containers
+# (commons-client-blue / -green) sit behind commons-client-proxy on the
+# shared network. Traffic switches via an nginx reload only after the
+# incoming color passes its health gate; a failed public verification
+# auto-reverts, so a bad release never reaches users.
+
+# The image lives in ghcr.io and may be private: authenticate for the
+# ROOT context too - container tasks run via the root-owned docker socket,
+# whose pulls use /root/.docker/config.json.
+- name: Log in to ghcr.io (root context)
+  community.docker.docker_login:
+    registry_url: https://ghcr.io
+    username: "{{ ghcr_username }}"
+    password: "{{ ghcr_token }}"
+  become: true
+  no_log: true
+  when:
+    - ghcr_username | default('') | length > 0
+    - ghcr_token | default('') | length > 0
+
+- name: Ensure shared Docker network exists
+  community.docker.docker_network:
+    name: "{{ docker_network_name }}"
+    state: present
+
+# Skip-if-present pattern (same as sonarqube/marketplace): images loaded
+# manually (docker load) never touch the registry.
+- name: Check {{ client_image }} image presence
+  ansible.builtin.command:
+    cmd: docker image inspect "{{ client_image }}"
+  register: cl_image_present
+  changed_when: false
+  failed_when: false
+
+- name: Pull {{ client_image }} image
+  community.docker.docker_image:
+    name: "{{ client_image }}"
+    source: pull
+  register: cl_pull
+  retries: 5
+  delay: 15
+  until: cl_pull is succeeded
+  when: cl_image_present.rc != 0
+
+# --- color bookkeeping --------------------------------------------------
+
+- name: Read current proxy routing configuration
+  ansible.builtin.slurp:
+    src: "{{ client_proxy_conf_dir }}/marketplace-client.conf"
+  register: cl_current_conf
+  failed_when: false
+
+- name: Determine active and target colors
+  ansible.builtin.set_fact:
+    cl_active: >-
+      {{ 'green' if (cl_current_conf.content is defined and cl_current_conf is succeeded
+                     and 'commons-client-green:3000;' in (cl_current_conf.content | b64decode))
+              else 'blue' }}
+
+- name: Set target color and route names
+  ansible.builtin.set_fact:
+    cl_target: "{{ 'green' if cl_active == 'blue' else 'blue' }}"
+    cl_target_name: "commons-client-{{ 'green' if cl_active == 'blue' else 'blue' }}"
+    cl_active_name: "commons-client-{{ cl_active }}"
+
+- name: Report deployment plan
+  ansible.builtin.debug:
+    msg: >-
+      Active color '{{ cl_active }}' keeps serving;
+      deploying image {{ client_image }} as '{{ cl_target }}'.
+
+# --- new color ----------------------------------------------------------
+
+- name: Deploy {{ cl_target_name }} container
+  community.docker.docker_container:
+    name: "{{ cl_target_name }}"
+    image: "{{ client_image }}"
+    restart_policy: unless-stopped
+    networks:
+      - name: "{{ docker_network_name }}"
+    comparisons:
+      image: ignore   # updates happen via tag bumps, not digest drift
+    # no published_ports: ingress goes exclusively through the proxy
+
+- name: Health-gate {{ cl_target_name }} inside its container
+  # docker exec via CLI with the polling loop INSIDE the container: one
+  # SSH session, real wget output captured on failure. The Next server
+  # binds IPv4-only, hence 127.0.0.1 instead of localhost.
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ cl_target_name }}"
+      - sh
+      - -c
+      - >-
+        for i in $(seq 1 24); do
+          wget --spider -qT 5 http://127.0.0.1:3000/api/health && exit 0;
+          sleep 5;
+        done;
+        echo "health gate exhausted"; exit 1
+  register: cl_gate
+  changed_when: false
+  failed_when: cl_gate.rc != 0
+
+# --- switch -------------------------------------------------------------
+
+- name: Ensure proxy config directory exists
+  ansible.builtin.file:
+    path: "{{ client_proxy_conf_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Point proxy at {{ cl_target }}
+  ansible.builtin.template:
+    src: marketplace-client.conf.j2
+    dest: "{{ client_proxy_conf_dir }}/marketplace-client.conf"
+    mode: "0644"
+  vars:
+    cl_route_color: "{{ cl_target }}"
+  register: cl_route_switched
+
+- name: Run reverse proxy on port {{ client_host_port }}
+  community.docker.docker_container:
+    name: "{{ client_proxy_name }}"
+    image: "{{ client_proxy_image }}"
+    restart_policy: unless-stopped
+    networks:
+      - name: "{{ docker_network_name }}"
+    published_ports:
+      - "{{ client_host_port }}:80"
+    volumes:
+      - "{{ client_proxy_conf_dir }}:/etc/nginx/conf.d:ro"
+
+- name: Reload proxy routing without dropping connections
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - "{{ client_proxy_name }}"
+      - nginx
+      - -s
+      - reload
+  when: cl_route_switched is changed
+  changed_when: true
+
+- name: Verify public endpoint through the proxy
+  block:
+    - name: Wait for healthy response on port {{ client_host_port }}
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ client_host_port }}/api/health"
+      register: api_health
+      retries: 12
+      delay: 5
+      until: api_health.status == 200
+      # HTTP against loopback needs no privileges; running this without
+      # sudo avoids fresh-connection become prompts timing out mid loop.
+      become: false
+
+  rescue:
+    - name: Revert proxy routing to {{ cl_active }}
+      ansible.builtin.template:
+        src: marketplace-client.conf.j2
+        dest: "{{ client_proxy_conf_dir }}/marketplace-client.conf"
+        mode: "0644"
+      vars:
+        cl_route_color: "{{ cl_active }}"
+
+    - name: Apply reverted routing
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ client_proxy_name }}"
+          - nginx
+          - -s
+          - reload
+      failed_when: false
+      changed_when: true
+
+    - name: Fail the deployment with rollback notice
+      ansible.builtin.fail:
+        msg: >-
+          {{ cl_target }} did not serve a healthy /api/health through the
+          proxy; traffic was rolled back to {{ cl_active }}, which stays
+          running for inspection. Check its logs before retrying.
+
+# --- retire -------------------------------------------------------------
+
+- name: Park previous color container (stopped, kept for instant rollback)
+  community.docker.docker_container:
+    name: "{{ cl_active_name }}"
+    state: stopped

@@ -69,3 +69,17 @@ marketplace_env:
 marketplace_proxy_name: commons-proxy
 marketplace_proxy_image: "{{ lookup('env', 'MARKETPLACE_PROXY_IMAGE') | default('nginx:1.29-alpine', true) }}"
 marketplace_proxy_conf_dir: "{{ lookup('env', 'MARKETPLACE_PROXY_CONF_DIR') | default('/opt/commons-proxy/conf.d', true) }}"
+
+# commons-marketplace client (ghcr.io/carlosgarcia-tech/commons-marketplace-client).
+# Same blue-green pattern; its nginx is the SINGLE public entrypoint:
+# routes /* to the active color and /api + /socket.io to the API proxy.
+client_image: >-
+    {{ lookup('env', 'CLIENT_IMAGE') | default('ghcr.io/carlosgarcia-tech/commons-marketplace-client:latest', true) }}
+client_proxy_name: commons-client-proxy
+client_proxy_image: "{{ lookup('env', 'CLIENT_PROXY_IMAGE') | default('nginx:1.29-alpine', true) }}"
+client_proxy_conf_dir: "{{ lookup('env', 'CLIENT_PROXY_CONF_DIR') | default('/opt/commons-client-proxy/conf.d', true) }}"
+# Host-side publish port - this is what `tailscale funnel <port>` targets.
+client_host_port: "{{ lookup('env', 'CLIENT_PORT') | default('8080', true) }}"
+# Stable address of the API blue-green proxy on commons-net.
+client_api_upstream_host: "{{ lookup('env', 'CLIENT_API_UPSTREAM_HOST') | default('commons-proxy', true) }}"
+client_api_upstream_port: "{{ lookup('env', 'CLIENT_API_UPSTREAM_PORT') | default('80', true) }}"
