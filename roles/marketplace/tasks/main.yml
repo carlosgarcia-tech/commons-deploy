@@ -23,6 +23,11 @@
 # Same skip-if-present pattern as the sonarqube role: images loaded
 # manually (docker load) never touch the registry, so slow server links
 # do not burn CI minutes.
+- name: Ensure shared Docker network exists
+  community.docker.docker_network:
+    name: "{{ docker_network_name }}"
+    state: present
+
 - name: Check {{ marketplace_image }} image presence
   ansible.builtin.command:
     cmd: docker image inspect "{{ marketplace_image }}"
