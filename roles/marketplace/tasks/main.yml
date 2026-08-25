@@ -198,11 +198,18 @@
 
 # --- retire -------------------------------------------------------------
 
+- name: Check whether {{ mp_active_name }} exists
+  community.docker.docker_container_info:
+    name: "{{ mp_active_name }}"
+  register: mp_active_info
+
 - name: Park previous color container (stopped, kept for instant rollback)
   # Stopped - not removed: it preserves the exact image/env combination
   # that served traffic until now, so the Marketplace Rollback workflow
   # can flip traffic back in seconds without pulling anything. The next
-  # deploy reuses this slot as its target color.
+  # deploy reuses this slot as its target color. Skipped on first-ever
+  # deploy, where the nominal opposite color does not exist yet.
   community.docker.docker_container:
     name: "{{ mp_active_name }}"
     state: stopped
+  when: mp_active_info.exists

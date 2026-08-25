@@ -188,7 +188,17 @@
 
 # --- retire -------------------------------------------------------------
 
+- name: Check whether {{ cl_active_name }} exists
+  community.docker.docker_container_info:
+    name: "{{ cl_active_name }}"
+  register: cl_active_info
+
 - name: Park previous color container (stopped, kept for instant rollback)
+  # Stopped - not removed: it preserves the exact image/env combination
+  # that served traffic until now, so the Client Rollback workflow can
+  # flip traffic back in seconds. Skipped on first-ever deploy, where
+  # the nominal opposite color does not exist yet.
   community.docker.docker_container:
     name: "{{ cl_active_name }}"
     state: stopped
+  when: cl_active_info.exists
